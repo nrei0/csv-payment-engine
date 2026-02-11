@@ -34,7 +34,14 @@ fn run() -> Result<(), AppError> {
 
     // Process transactions one by one by engine.
     for tx in source {
-        let tx = tx?;
+        // Our assumptions that partners would provide us with correct transactions, so ignore source errors, but if needed, we can handle it there.
+        let tx = match tx {
+            Ok(tx) => tx,
+            Err(_e) => {
+                continue;
+            }
+        };
+
         if let Err(_e) = engine.apply(&tx) {
             // Out assumptions that partners would provide us with correct transactions.
             // So ignore engine errors, but if needed, we can handle it there.
