@@ -1,10 +1,9 @@
 use csv::{DeserializeRecordsIntoIter, Trim};
 use std::io::{BufReader, Read};
 
-use crate::{
-    dto::csv_transaction::CsvTransaction, engine::transaction::Transaction,
-    error::source_error::SourceError,
-};
+use crate::{engine::transaction::Transaction, error::source_error::SourceError};
+
+use super::csv_transaction::CsvTransaction;
 
 pub struct CsvSource<R: Read> {
     inner_iter: DeserializeRecordsIntoIter<BufReader<R>, CsvTransaction>,

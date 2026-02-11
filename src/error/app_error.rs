@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use super::{engine_error::EngineError, source_error::SourceError};
+use super::{engine_error::EngineError, output_error::OutputError, source_error::SourceError};
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -12,6 +12,9 @@ pub enum AppError {
 
     #[error(transparent)]
     Source(#[from] SourceError),
+
+    #[error(transparent)]
+    Output(#[from] OutputError),
 
     #[error(transparent)]
     Engine(#[from] EngineError),

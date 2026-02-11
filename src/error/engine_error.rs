@@ -2,6 +2,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EngineError {
+    #[error("duplicate transaction: {0}")]
+    DuplicateTransaction(String),
+
     #[error("missing amount for transaction: {0}")]
     MissingAmount(String),
 

@@ -52,7 +52,7 @@ impl Engine {
     fn apply_deposit(&mut self, transaction: &Transaction) -> Result<(), EngineError> {
         // Check for duplicate transaction.
         if self.ledger.contains_key(&transaction.tx) {
-            return Ok(());
+            return Err(EngineError::DuplicateTransaction(transaction.tx.to_string()));
         }
 
         // Amount is required for deposits and withdrawals.
@@ -87,7 +87,7 @@ impl Engine {
     fn apply_withdrawal(&mut self, transaction: &Transaction) -> Result<(), EngineError> {
         // Check for duplicate transaction.
         if self.ledger.contains_key(&transaction.tx) {
-            return Ok(());
+            return Err(EngineError::DuplicateTransaction(transaction.tx.to_string()));
         }
 
         // Amount is required for deposits and withdrawals.
