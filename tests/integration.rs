@@ -60,6 +60,11 @@ fn run_pipeline_ignore_engine_errors(input_csv: &str) -> String {
     String::from_utf8(out).expect("output should be utf-8")
 }
 
+fn run_and_parse_accounts(input_csv: &str) -> HashMap<u16, AccountRow> {
+    let output = run_pipeline_ignore_engine_errors(input_csv);
+    parse_output_csv_to_map(&output)
+}
+
 #[test]
 fn sample_csv() {
     let input = "type, client, tx, amount\n\
@@ -274,6 +279,80 @@ deposit, 1, 1, 1.0000\n";
     assert_eq!(row.available, 10_000);
     assert_eq!(row.held, 0);
     assert_eq!(row.total, 10_000);
+    assert!(!row.locked);
+}
+
+#[test]
+fn withdrawal_dispute_then_resolve_restores_withdrawal_effect() {
+    // deposit 100 -> withdrawal 100 -> dispute withdrawal -> resolve
+    // Final should be same as after withdrawal: 0 balance, not locked.
+    let input = "type, client, tx, amount\n\
+deposit, 1, 1, 100.0000\n\
+withdrawal, 1, 2, 100.0000\n\
+dispute, 1, 2,\n\
+resolve, 1, 2,\n";
+
+    let got = run_and_parse_accounts(input);
+    let row = got.get(&1).unwrap();
+
+    assert_eq!(row.available, 0);
+    assert_eq!(row.held, 0);
+    assert_eq!(row.total, 0);
+    assert!(!row.locked);
+}
+
+#[test]
+fn withdrawal_dispute_then_chargeback_reverses_withdrawal_and_locks() {
+    // deposit 100 -> withdrawal 100 -> dispute withdrawal -> chargeback
+    // Final: withdrawal reversed, funds returned, account locked.
+    let input = "type, client, tx, amount\n\
+deposit, 1, 1, 100.0000\n\
+withdrawal, 1, 2, 100.0000\n\
+dispute, 1, 2,\n\
+chargeback, 1, 2,\n";
+
+    let got = run_and_parse_accounts(input);
+    let row = got.get(&1).unwrap();
+
+    assert_eq!(row.available, 1_000_000); // 100 * 10^4
+    assert_eq!(row.held, 0);
+    assert_eq!(row.total, 1_000_000);
+    assert!(row.locked);
+}
+
+#[test]
+fn deposit_dispute_then_chargeback_removes_funds_and_locks() {
+    // deposit 100 -> dispute deposit -> chargeback
+    // Deposit is reversed permanently: total becomes 0, account locked.
+    let input = "type, client, tx, amount\n\
+deposit, 1, 1, 100.0000\n\
+dispute, 1, 1,\n\
+chargeback, 1, 1,\n";
+
+    let got = run_and_parse_accounts(input);
+    let row = got.get(&1).unwrap();
+
+    assert_eq!(row.available, 0);
+    assert_eq!(row.held, 0);
+    assert_eq!(row.total, 0);
+    assert!(row.locked);
+}
+
+#[test]
+fn deposit_dispute_then_resolve_restores_available_and_keeps_total() {
+    // deposit 100 -> dispute deposit -> resolve
+    // Final: back to normal (no lock): available=100, held=0, total=100
+    let input = "type, client, tx, amount\n\
+deposit, 1, 1, 100.0000\n\
+dispute, 1, 1,\n\
+resolve, 1, 1,\n";
+
+    let got = run_and_parse_accounts(input);
+    let row = got.get(&1).unwrap();
+
+    assert_eq!(row.available, 1_000_000);
+    assert_eq!(row.held, 0);
+    assert_eq!(row.total, 1_000_000);
     assert!(!row.locked);
 }
 

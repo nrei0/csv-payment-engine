@@ -23,6 +23,15 @@ pub enum EngineError {
     #[error("insufficient held funds for transaction: {0}")]
     InsufficientHeldFunds(String),
 
+    #[error("invalid dispute target for transaction: {0}")]
+    InvalidDisputeTarget(String),
+
+    #[error("invalid resolve target for transaction: {0}")]
+    InvalidResolveTarget(String),
+
+    #[error("invalid chargeback target for transaction: {0}")]
+    InvalidChargebackTarget(String),
+
     #[error("dispute on non-existent transaction: {0}")]
     DisputeNonExistentTransaction(String),
 

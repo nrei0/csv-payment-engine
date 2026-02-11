@@ -82,6 +82,7 @@ impl Engine {
             LedgerEntry {
                 tx: transaction.tx,
                 client: transaction.client,
+                kind: transaction.kind,
                 amount,
                 disputed: false,
                 charged_back: false,
@@ -129,6 +130,7 @@ impl Engine {
             LedgerEntry {
                 tx: transaction.tx,
                 client: transaction.client,
+                kind: transaction.kind,
                 amount,
                 disputed: false,
                 charged_back: false,
@@ -140,8 +142,8 @@ impl Engine {
 
     fn apply_dispute(&mut self, transaction: &Transaction) -> Result<(), EngineError> {
         // Validate that the transaction exists and belongs to the same client, and is not already disputed or charged back.
-        // Retrieve the amount from the ledger entry for the disputed transaction.
-        let amount = {
+        // Retrieve the amount and original kind from the ledger entry for the disputed transaction.
+        let (amount, original_kind) = {
             let entry = self.ledger.get(&transaction.tx).ok_or_else(|| {
                 EngineError::DisputeNonExistentTransaction(transaction.tx.to_string())
             })?;
@@ -167,28 +169,42 @@ impl Engine {
                 ));
             }
 
-            entry.amount
+            (entry.amount, entry.kind)
         };
 
-        // Account is locked.
+        // Account must exist for dispute/resolve/chargeback.
         let account = match self.account_mut_existing(transaction.client) {
             Some(a) => a,
             None => {
                 return Err(EngineError::AccountNotFound(transaction.client.to_string()));
             }
         };
+
+        // Account is locked.
         if account.locked {
             return Err(EngineError::AccountLocked(transaction.tx.to_string()));
         }
 
-        // Account has insufficient available funds to dispute.
-        if account.available < amount {
-            return Err(EngineError::InsufficientFunds(transaction.tx.to_string()));
-        }
+        match original_kind {
+            TxKind::Deposit => {
+                // Disputing a deposit: move funds from available to held.
+                if account.available < amount {
+                    return Err(EngineError::InsufficientFunds(transaction.tx.to_string()));
+                }
 
-        // Apply the dispute: move funds from available to held.
-        account.available -= amount;
-        account.held += amount;
+                account.available -= amount;
+                account.held += amount;
+            }
+            TxKind::Withdrawal => {
+                // Disputing a withdrawal: temporarily restore withdrawn funds into held.
+                account.held += amount;
+            }
+            _ => {
+                return Err(EngineError::InvalidDisputeTarget(
+                    transaction.tx.to_string(),
+                ));
+            }
+        }
 
         // Mark the transaction as disputed.
         if let Some(entry) = self.ledger.get_mut(&transaction.tx) {
@@ -200,8 +216,8 @@ impl Engine {
 
     fn apply_resolve(&mut self, transaction: &Transaction) -> Result<(), EngineError> {
         // Validate that the transaction exists and belongs to the same client, and is currently disputed and not charged back.
-        // Retrieve the amount from the ledger entry for the resolved transaction.
-        let amount = {
+        // Retrieve the amount and original kind from the ledger entry for the resolved transaction.
+        let (amount, original_kind) = {
             let entry = self.ledger.get(&transaction.tx).ok_or_else(|| {
                 EngineError::ResolveNonExistentTransaction(transaction.tx.to_string())
             })?;
@@ -227,30 +243,45 @@ impl Engine {
                 ));
             }
 
-            entry.amount
+            (entry.amount, entry.kind)
         };
 
-        // Account is locked.
+        // Account must exist for dispute/resolve/chargeback.
         let account = match self.account_mut_existing(transaction.client) {
             Some(a) => a,
             None => {
                 return Err(EngineError::AccountNotFound(transaction.client.to_string()));
             }
         };
+
+        // Account is locked.
         if account.locked {
             return Err(EngineError::AccountLocked(transaction.tx.to_string()));
         }
 
-        // Account has insufficient held funds to resolve.
+        // Must have enough held funds to resolve.
         if account.held < amount {
             return Err(EngineError::InsufficientHeldFunds(
                 transaction.tx.to_string(),
             ));
         }
 
-        // Apply the resolve: move funds from held to available.
-        account.held -= amount;
-        account.available += amount;
+        match original_kind {
+            TxKind::Deposit => {
+                // Resolving a deposit dispute: move held back to available.
+                account.held -= amount;
+                account.available += amount;
+            }
+            TxKind::Withdrawal => {
+                // Resolving a withdrawal dispute: remove the temporarily restored held funds.
+                account.held -= amount;
+            }
+            _ => {
+                return Err(EngineError::InvalidResolveTarget(
+                    transaction.tx.to_string(),
+                ));
+            }
+        }
 
         // Mark the transaction as no longer disputed.
         if let Some(entry) = self.ledger.get_mut(&transaction.tx) {
@@ -262,8 +293,8 @@ impl Engine {
 
     fn apply_chargeback(&mut self, transaction: &Transaction) -> Result<(), EngineError> {
         // Validate that the transaction exists and belongs to the same client, and is currently disputed and not charged back.
-        // Retrieve the amount from the ledger entry for the charged back transaction.
-        let amount = {
+        // Retrieve the amount and original kind from the ledger entry for the charged back transaction.
+        let (amount, original_kind) = {
             let entry = self.ledger.get(&transaction.tx).ok_or_else(|| {
                 EngineError::ChargebackNonExistentTransaction(transaction.tx.to_string())
             })?;
@@ -289,29 +320,50 @@ impl Engine {
                 ));
             }
 
-            entry.amount
+            (entry.amount, entry.kind)
         };
 
-        // Account is locked.
+        // Account must exist for dispute/resolve/chargeback.
         let account = match self.account_mut_existing(transaction.client) {
             Some(a) => a,
             None => {
                 return Err(EngineError::AccountNotFound(transaction.client.to_string()));
             }
         };
+
+        // Account is locked.
         if account.locked {
             return Err(EngineError::AccountLocked(transaction.tx.to_string()));
         }
 
-        // Account has insufficient held funds to charge back.
+        // Must have enough held funds to charge back.
         if account.held < amount {
             return Err(EngineError::InsufficientHeldFunds(
                 transaction.tx.to_string(),
             ));
         }
 
-        // Apply the chargeback: remove funds from held and lock the account.
-        account.held -= amount;
+        match original_kind {
+            TxKind::Deposit => {
+                // Chargeback a deposit: held funds are withdrawn from the system.
+                account.held -= amount;
+            }
+
+            TxKind::Withdrawal => {
+                // Chargeback a withdrawal: reverse the withdrawal permanently.
+                // The disputed amount is currently held (temporary restoration). Finalize by moving it to available.
+                account.held -= amount;
+                account.available += amount;
+            }
+
+            _ => {
+                return Err(EngineError::InvalidChargebackTarget(
+                    transaction.tx.to_string(),
+                ));
+            }
+        }
+
+        // Lock the account on chargeback.
         account.locked = true;
 
         // Mark the transaction as charged back and no longer disputed.
