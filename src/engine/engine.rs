@@ -52,13 +52,20 @@ impl Engine {
     fn apply_deposit(&mut self, transaction: &Transaction) -> Result<(), EngineError> {
         // Check for duplicate transaction.
         if self.ledger.contains_key(&transaction.tx) {
-            return Err(EngineError::DuplicateTransaction(transaction.tx.to_string()));
+            return Err(EngineError::DuplicateTransaction(
+                transaction.tx.to_string(),
+            ));
         }
 
         // Amount is required for deposits and withdrawals.
         let amount = transaction
             .amount
             .ok_or_else(|| EngineError::MissingAmount(transaction.tx.to_string()))?;
+
+        // Amount should be > 0.
+        if amount <= 0 {
+            return Err(EngineError::InvalidAmount(transaction.tx.to_string()));
+        }
 
         // Account is locked.
         let account = self.account_mut_or_create(transaction.client);
@@ -87,13 +94,20 @@ impl Engine {
     fn apply_withdrawal(&mut self, transaction: &Transaction) -> Result<(), EngineError> {
         // Check for duplicate transaction.
         if self.ledger.contains_key(&transaction.tx) {
-            return Err(EngineError::DuplicateTransaction(transaction.tx.to_string()));
+            return Err(EngineError::DuplicateTransaction(
+                transaction.tx.to_string(),
+            ));
         }
 
         // Amount is required for deposits and withdrawals.
         let amount = transaction
             .amount
             .ok_or_else(|| EngineError::MissingAmount(transaction.tx.to_string()))?;
+
+        // Amount should be > 0.
+        if amount <= 0 {
+            return Err(EngineError::InvalidAmount(transaction.tx.to_string()));
+        }
 
         // Account is locked.
         let account = self.account_mut_or_create(transaction.client);

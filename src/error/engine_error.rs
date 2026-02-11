@@ -8,6 +8,9 @@ pub enum EngineError {
     #[error("missing amount for transaction: {0}")]
     MissingAmount(String),
 
+    #[error("invalid amount for transaction: {0}")]
+    InvalidAmount(String),
+
     #[error("account is locked for transaction: {0}")]
     AccountLocked(String),
 

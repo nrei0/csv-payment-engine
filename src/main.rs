@@ -29,6 +29,9 @@ fn run() -> Result<(), AppError> {
 
     let mut engine = Engine::new();
 
+    // Ideally for testing purposes better to process file to input -> processing -> output.
+    // So we can easily test processing logic without dealing with file IO.
+
     // Process transactions one by one by engine.
     for tx in source {
         let tx = tx?;
